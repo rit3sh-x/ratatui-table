@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-07-31
+
+### 🐛 Bug Fixes
+
+- Render changelog whitespace correctly
+  > Use git-cliff whitespace controls instead of emitting literal escape
+  > characters, and clean the initial checked changelog.
+
+
 ## [0.1.0] - 2026-07-31
 
 ### 🚀 Features
