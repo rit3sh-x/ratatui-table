@@ -4,9 +4,9 @@
 //! cargo run -p selection
 //! ```
 //!
-//! The arrow keys move the selection on both axes. The axis keys pick which of the three
-//! [`TableSelection`] variants is active, and the placement key decides which columns make room
-//! for the highlight symbol.
+//! The arrow keys move the selection on both axes. The axis keys pick whether a row, a column, a
+//! cell, or nothing is selected, and the placement key decides which columns make room for the
+//! highlight symbol.
 
 use std::io::Result;
 
@@ -16,7 +16,7 @@ use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::Block;
 use ratatui::{DefaultTerminal, Frame};
-use ratatui_table::{HighlightPlacement, HighlightSpacing, Row, Table, TableSelection, TableState};
+use ratatui_table::{HighlightPlacement, HighlightSpacing, Row, Table, TableState};
 
 const HEADER: [&str; 4] = ["Name", "Role", "City", "Joined"];
 
@@ -49,7 +49,7 @@ impl App {
     fn new() -> Self {
         Self {
             items: ITEMS.iter().map(|item| item.to_vec()).collect(),
-            state: TableState::new().with_selected_cell(Some((0, 1))),
+            state: TableState::new().with_selected_cell((0, 1)),
             placement: HighlightPlacement::FirstColumn,
             spacing: HighlightSpacing::Always,
         }
@@ -63,20 +63,20 @@ impl App {
             {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Down | KeyCode::Char('j') => self.state.select_next_row(),
-                    KeyCode::Up | KeyCode::Char('k') => self.state.select_previous_row(),
+                    KeyCode::Down | KeyCode::Char('j') => self.state.select_next(),
+                    KeyCode::Up | KeyCode::Char('k') => self.state.select_previous(),
                     KeyCode::Right | KeyCode::Char('l') => self.state.select_next_column(),
                     KeyCode::Left | KeyCode::Char('h') => self.state.select_previous_column(),
-                    KeyCode::Char('r') => self.state.set_selection(TableSelection::Row(self.row())),
-                    KeyCode::Char('c') => {
-                        self.state
-                            .set_selection(TableSelection::Column(self.column()));
+                    KeyCode::Char('r') => {
+                        self.state.select_column(None);
+                        self.state.select(Some(self.row()));
                     }
-                    KeyCode::Char('x') => self.state.set_selection(TableSelection::Cell {
-                        row: self.row(),
-                        column: self.column(),
-                    }),
-                    KeyCode::Char('n') => self.state.set_selection(None),
+                    KeyCode::Char('c') => {
+                        self.state.select(None);
+                        self.state.select_column(Some(self.column()));
+                    }
+                    KeyCode::Char('x') => self.state.select_cell(Some((self.row(), self.column()))),
+                    KeyCode::Char('n') => self.state.select_cell(None),
                     KeyCode::Char('p') => self.placement = next_placement(&self.placement),
                     KeyCode::Char('s') => self.spacing = next_spacing(&self.spacing),
                     _ => {}
@@ -124,7 +124,7 @@ impl App {
     fn config_line(&self) -> Line<'static> {
         Line::from(format!(
             " selection: {}   placement: {}   spacing: {} ",
-            selection_label(self.state.selection()),
+            selection_label(self.state.selected(), self.state.selected_column()),
             placement_label(&self.placement),
             self.spacing,
         ))
@@ -133,7 +133,7 @@ impl App {
 
     /// The row the axis keys switch to, which is the selected one when there is one.
     fn row(&self) -> usize {
-        self.state.selected_row().unwrap_or(0)
+        self.state.selected().unwrap_or(0)
     }
 
     /// The column the axis keys switch to, which is the selected one when there is one.
@@ -148,8 +148,8 @@ impl App {
     fn clamp_selection(&mut self) {
         let last_row = self.items.len().saturating_sub(1);
         let last_column = HEADER.len().saturating_sub(1);
-        if let Some(row) = self.state.selected_row() {
-            self.state.select_row(Some(row.min(last_row)));
+        if let Some(row) = self.state.selected() {
+            self.state.select(Some(row.min(last_row)));
         }
         if let Some(column) = self.state.selected_column() {
             self.state.select_column(Some(column.min(last_column)));
@@ -181,11 +181,11 @@ fn placement_label(placement: &HighlightPlacement) -> String {
     }
 }
 
-fn selection_label(selection: Option<TableSelection>) -> String {
-    match selection {
-        Some(TableSelection::Row(row)) => format!("Row({row})"),
-        Some(TableSelection::Column(column)) => format!("Column({column})"),
-        Some(TableSelection::Cell { row, column }) => format!("Cell({row}, {column})"),
-        None => "None".to_string(),
+fn selection_label(row: Option<usize>, column: Option<usize>) -> String {
+    match (row, column) {
+        (Some(row), Some(column)) => format!("Cell({row}, {column})"),
+        (Some(row), None) => format!("Row({row})"),
+        (None, Some(column)) => format!("Column({column})"),
+        (None, None) => "None".to_string(),
     }
 }

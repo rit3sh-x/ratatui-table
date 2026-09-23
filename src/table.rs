@@ -16,7 +16,7 @@ pub use self::cell::Cell;
 pub use self::highlight_placement::HighlightPlacement;
 pub use self::highlight_spacing::HighlightSpacing;
 pub use self::row::Row;
-pub use self::state::{TableSelection, TableState};
+pub use self::state::TableState;
 
 mod cell;
 mod highlight_placement;
@@ -47,11 +47,6 @@ mod state;
 /// Note: Highlight styles are applied in the following order: Row, Column, Cell.
 ///
 /// # Selection and highlighting
-///
-/// A [`TableState`] holds at most one [`TableSelection`] — a row, a column, or a single cell. The
-/// three axes are not independent flags: selecting a column while a row is selected produces a
-/// cell selection, and clearing the row again leaves the column selected. See [`TableSelection`]
-/// for the full transition rules.
 ///
 /// What the selection draws is controlled by three independent settings:
 ///
@@ -811,8 +806,21 @@ impl StatefulWidget for &Table<'_> {
             return;
         }
 
+        if state.selected.is_some_and(|s| s >= self.rows.len()) {
+            state.select(Some(self.rows.len().saturating_sub(1)));
+        }
+
+        if self.rows.is_empty() {
+            state.select(None);
+        }
+
         let column_count = self.column_count();
-        state.clamp(self.rows.len(), column_count);
+        if state.selected_column.is_some_and(|s| s >= column_count) {
+            state.select_column(Some(column_count.saturating_sub(1)));
+        }
+        if column_count == 0 {
+            state.select_column(None);
+        }
 
         let selection_width = self.selection_width(state);
         let symbol_columns = self
@@ -930,7 +938,7 @@ impl Table<'_> {
             let row_area = Rect { y, height, ..area };
             buf.set_style(row_area, row.style);
 
-            let is_selected = state.selected_row() == Some(i);
+            let is_selected = state.selected() == Some(i);
             self.render_highlight_symbol(
                 buf,
                 row_area,
@@ -1030,10 +1038,10 @@ impl Table<'_> {
         if selection_width == 0 {
             return;
         }
-        let Some(selection) = state.selection() else {
+        if state.selected().is_none() && state.selected_column().is_none() {
             return;
-        };
-        if row_index != selection.row().unwrap_or(first_visible_row) {
+        }
+        if row_index != state.selected().unwrap_or(first_visible_row) {
             return;
         }
 
@@ -1098,7 +1106,7 @@ impl Table<'_> {
         let last_row = self.rows.len().saturating_sub(1);
         let mut start = state.offset.min(last_row);
 
-        if let Some(selected) = state.selected_row() {
+        if let Some(selected) = state.selected {
             start = start.min(selected);
         }
 
@@ -1113,7 +1121,7 @@ impl Table<'_> {
             end += 1;
         }
 
-        if let Some(selected) = state.selected_row() {
+        if let Some(selected) = state.selected {
             let selected = selected.min(last_row);
 
             // scroll down until the selected row is visible
@@ -1193,7 +1201,7 @@ impl Table<'_> {
     /// Any selection counts, not just a row: `HighlightPlacement::SelectedColumn` would have
     /// nowhere to draw if a column-only selection reserved no space.
     fn selection_width(&self, state: &TableState) -> u16 {
-        let has_selection = state.selection().is_some();
+        let has_selection = state.selected().is_some() || state.selected_column().is_some();
         if self.highlight_spacing.should_add(has_selection) {
             self.highlight_symbol.width() as u16
         } else {
@@ -1454,9 +1462,9 @@ mod tests {
             let rows: Vec<Row> = Vec::new();
             let widths = vec![Constraint::Percentage(100)];
             let table = Table::new(rows, widths);
-            state.select_first_row();
+            state.select_first();
             StatefulWidget::render(table, table_buf.area, &mut table_buf, &mut state);
-            assert_eq!(state.selected_row(), None);
+            assert_eq!(state.selected(), None);
             assert_eq!(state.selected_column(), None);
         }
 
@@ -1468,24 +1476,24 @@ mod tests {
 
             let items = vec![Row::new(vec!["Item 1"])];
             let table = Table::new(items, widths);
-            state.select_first_row();
+            state.select_first();
             StatefulWidget::render(&table, table_buf.area, &mut table_buf, &mut state);
-            assert_eq!(state.selected_row(), Some(0));
+            assert_eq!(state.selected(), Some(0));
             assert_eq!(state.selected_column(), None);
 
-            state.select_last_row();
+            state.select_last();
             StatefulWidget::render(&table, table_buf.area, &mut table_buf, &mut state);
-            assert_eq!(state.selected_row(), Some(0));
+            assert_eq!(state.selected(), Some(0));
             assert_eq!(state.selected_column(), None);
 
-            state.select_previous_row();
+            state.select_previous();
             StatefulWidget::render(&table, table_buf.area, &mut table_buf, &mut state);
-            assert_eq!(state.selected_row(), Some(0));
+            assert_eq!(state.selected(), Some(0));
             assert_eq!(state.selected_column(), None);
 
-            state.select_next_row();
+            state.select_next();
             StatefulWidget::render(&table, table_buf.area, &mut table_buf, &mut state);
-            assert_eq!(state.selected_row(), Some(0));
+            assert_eq!(state.selected(), Some(0));
             assert_eq!(state.selected_column(), None);
 
             let mut state = TableState::default();
@@ -1493,22 +1501,22 @@ mod tests {
             state.select_first_column();
             StatefulWidget::render(&table, table_buf.area, &mut table_buf, &mut state);
             assert_eq!(state.selected_column(), Some(0));
-            assert_eq!(state.selected_row(), None);
+            assert_eq!(state.selected(), None);
 
             state.select_last_column();
             StatefulWidget::render(&table, table_buf.area, &mut table_buf, &mut state);
             assert_eq!(state.selected_column(), Some(0));
-            assert_eq!(state.selected_row(), None);
+            assert_eq!(state.selected(), None);
 
             state.select_previous_column();
             StatefulWidget::render(&table, table_buf.area, &mut table_buf, &mut state);
             assert_eq!(state.selected_column(), Some(0));
-            assert_eq!(state.selected_row(), None);
+            assert_eq!(state.selected(), None);
 
             state.select_next_column();
             StatefulWidget::render(&table, table_buf.area, &mut table_buf, &mut state);
             assert_eq!(state.selected_column(), Some(0));
-            assert_eq!(state.selected_row(), None);
+            assert_eq!(state.selected(), None);
         }
     }
 
@@ -1825,7 +1833,7 @@ mod tests {
             let table = Table::new(rows, [Constraint::Length(5); 2])
                 .row_highlight_style(Style::new().red())
                 .highlight_symbol(">>");
-            let mut state = TableState::new().with_selected_row(Some(0));
+            let mut state = TableState::new().with_selected(Some(0));
             StatefulWidget::render(table, Rect::new(0, 0, 15, 3), &mut buf, &mut state);
             let expected = Buffer::with_lines([
                 ">>Cell1 Cell2  ".red(),
@@ -1899,9 +1907,7 @@ mod tests {
                 .highlight_symbol(">>")
                 .row_highlight_style(Style::new().red())
                 .column_highlight_style(Style::new().blue());
-            let mut state = TableState::new()
-                .with_selected_row(1)
-                .with_selected_column(2);
+            let mut state = TableState::new().with_selected(1).with_selected_column(2);
             StatefulWidget::render(table, Rect::new(0, 0, 20, 4), &mut buf, &mut state);
             let expected = Buffer::with_lines::<[Line; 4]>([
                 Line::from(vec!["  Cell1 ".into(), "Cell2 ".into(), "Cell3".blue()]),
@@ -1925,9 +1931,7 @@ mod tests {
                 .row_highlight_style(Style::new().red())
                 .column_highlight_style(Style::new().blue())
                 .cell_highlight_style(Style::new().green());
-            let mut state = TableState::new()
-                .with_selected_row(1)
-                .with_selected_column(2);
+            let mut state = TableState::new().with_selected(1).with_selected_column(2);
             StatefulWidget::render(table, Rect::new(0, 0, 20, 4), &mut buf, &mut state);
             let expected = Buffer::with_lines::<[Line; 4]>([
                 Line::from(vec!["  Cell1 ".into(), "Cell2 ".into(), "Cell3".blue()]),
@@ -1960,7 +1964,7 @@ mod tests {
             let mut buf = Buffer::empty(Rect::new(0, 0, 2, 5));
             let mut state = TableState::new()
                 .with_offset(50)
-                .with_selected_row(selected_row.into());
+                .with_selected(selected_row.into());
 
             StatefulWidget::render(table.clone(), Rect::new(0, 0, 5, 5), &mut buf, &mut state);
 
@@ -1976,7 +1980,8 @@ mod tests {
         #[track_caller]
         fn assert_render(
             placement: HighlightPlacement,
-            selection: TableSelection,
+            selected_row: Option<usize>,
+            selected_column: Option<usize>,
             expected: [&str; 3],
         ) {
             let rows = [
@@ -1987,7 +1992,9 @@ mod tests {
             let table = Table::new(rows, [Constraint::Length(2); 3])
                 .highlight_symbol(">>")
                 .highlight_placement(placement);
-            let mut state = TableState::new().with_selection(selection);
+            let mut state = TableState::new()
+                .with_selected(selected_row)
+                .with_selected_column(selected_column);
             let area = Rect::new(0, 0, 24, 3);
             let mut buf = Buffer::empty(area);
             StatefulWidget::render(table, area, &mut buf, &mut state);
@@ -1998,7 +2005,8 @@ mod tests {
         fn first_column_with_row_selection() {
             assert_render(
                 HighlightPlacement::FirstColumn,
-                TableSelection::Row(1),
+                Some(1),
+                None,
                 [
                     "  A1 A2 A3              ",
                     ">>B1 B2 B3              ",
@@ -2012,7 +2020,8 @@ mod tests {
             // The slot is at column 0, the selection is at column 2. The symbol still shows.
             assert_render(
                 HighlightPlacement::FirstColumn,
-                TableSelection::Cell { row: 1, column: 2 },
+                Some(1),
+                Some(2),
                 [
                     "  A1 A2 A3              ",
                     ">>B1 B2 B3              ",
@@ -2025,7 +2034,8 @@ mod tests {
         fn selected_column_moves_the_slot() {
             assert_render(
                 HighlightPlacement::SelectedColumn,
-                TableSelection::Cell { row: 1, column: 1 },
+                Some(1),
+                Some(1),
                 [
                     "A1   A2 A3              ",
                     "B1 >>B2 B3              ",
@@ -2038,7 +2048,8 @@ mod tests {
         fn selected_column_without_a_column_falls_back_to_first() {
             assert_render(
                 HighlightPlacement::SelectedColumn,
-                TableSelection::Row(0),
+                Some(0),
+                None,
                 [
                     ">>A1 A2 A3              ",
                     "  B1 B2 B3              ",
@@ -2051,7 +2062,8 @@ mod tests {
         fn columns_indents_each_listed_column() {
             assert_render(
                 HighlightPlacement::Columns(vec![1, 2]),
-                TableSelection::Row(0),
+                Some(0),
+                None,
                 [
                     "A1 >>A2 >>A3            ",
                     "B1   B2   B3            ",
@@ -2065,7 +2077,8 @@ mod tests {
             // Index 9 does not exist: no panic, and no slot allocated for it.
             assert_render(
                 HighlightPlacement::Columns(vec![1, 9]),
-                TableSelection::Row(0),
+                Some(0),
+                None,
                 [
                     "A1 >>A2 A3              ",
                     "B1   B2 B3              ",
@@ -2078,7 +2091,8 @@ mod tests {
         fn all_columns() {
             assert_render(
                 HighlightPlacement::AllColumns,
-                TableSelection::Row(2),
+                Some(2),
+                None,
                 [
                     "  A1   A2   A3          ",
                     "  B1   B2   B3          ",
@@ -2109,7 +2123,7 @@ mod tests {
                 .highlight_symbol(">>")
                 .highlight_spacing(HighlightSpacing::Never)
                 .highlight_placement(HighlightPlacement::AllColumns);
-            let mut state = TableState::new().with_selected_row(0);
+            let mut state = TableState::new().with_selected(0);
             let area = Rect::new(0, 0, 12, 2);
             let mut buf = Buffer::empty(area);
             StatefulWidget::render(table, area, &mut buf, &mut state);
@@ -2128,7 +2142,7 @@ mod tests {
                 .header(Row::new(["H1", "H2", "H3"]))
                 .highlight_symbol(">>")
                 .highlight_placement(HighlightPlacement::AllColumns);
-            let mut state = TableState::new().with_selected_row(0);
+            let mut state = TableState::new().with_selected(0);
             let area = Rect::new(0, 0, 20, 2);
             let mut buf = Buffer::empty(area);
             StatefulWidget::render(table, area, &mut buf, &mut state);
@@ -2458,7 +2472,7 @@ mod tests {
                 .column_spacing(spacing);
             let area = Rect::new(0, 0, columns, 3);
             let mut buf = Buffer::empty(area);
-            let mut state = TableState::default().with_selected_row(selection);
+            let mut state = TableState::default().with_selected(selection);
             StatefulWidget::render(table, area, &mut buf, &mut state);
             assert_eq!(buf, Buffer::with_lines(expected));
         }
@@ -3017,7 +3031,7 @@ mod tests {
             .column_spacing(spacing);
         let area = Rect::new(0, 0, columns, 3);
         let mut buf = Buffer::empty(area);
-        let mut state = TableState::default().with_selected_row(selection);
+        let mut state = TableState::default().with_selected(selection);
         StatefulWidget::render(table, area, &mut buf, &mut state);
         assert_eq!(buf, Buffer::with_lines(expected));
     }

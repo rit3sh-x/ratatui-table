@@ -56,11 +56,10 @@ become part of `ratatui-widgets` itself.
 
 - `std` enables the standard-library features of the Ratatui dependencies. The Table itself
   remains usable with `no_std` plus `alloc` by default.
-- `serde` adds serialization and deserialization for [`TableState`], [`TableSelection`],
+- `serde` adds serialization and deserialization for [`TableState`],
   [`HighlightSpacing`][hs], and [`HighlightPlacement`][hp].
 
 [`TableState`]: https://docs.rs/ratatui-table/latest/ratatui_table/struct.TableState.html
-[`TableSelection`]: https://docs.rs/ratatui-table/latest/ratatui_table/enum.TableSelection.html
 [hs]: https://docs.rs/ratatui-table/latest/ratatui_table/enum.HighlightSpacing.html
 [hp]: https://docs.rs/ratatui-table/latest/ratatui_table/enum.HighlightPlacement.html
 

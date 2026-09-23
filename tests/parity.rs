@@ -3,8 +3,6 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Flex, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, StatefulWidget, Widget};
-#[cfg(feature = "serde")]
-use ratatui_table::TableSelection;
 use ratatui_table::{Cell, HighlightSpacing, Row, Table, TableState};
 use ratatui_widgets::table as builtin;
 
@@ -94,7 +92,7 @@ fn renders_selection_and_scrolling_like_builtin_table() {
 
     assert_eq!(extracted_buffer, builtin_buffer);
     assert_eq!(extracted_state.offset(), builtin_state.offset());
-    assert_eq!(extracted_state.selected_row(), builtin_state.selected());
+    assert_eq!(extracted_state.selected(), builtin_state.selected());
     assert_eq!(
         extracted_state.selected_column(),
         builtin_state.selected_column()
@@ -141,7 +139,7 @@ fn default_highlight_placement_matches_builtin_table() {
         .highlight_symbol(">> ")
         .flex(Flex::Start);
 
-    let mut extracted_state = TableState::new().with_selected_row(1);
+    let mut extracted_state = TableState::new().with_selected(1);
     let mut builtin_state = builtin::TableState::new().with_selected(1);
     let mut extracted_buffer = Buffer::empty(area);
     let mut builtin_buffer = Buffer::empty(area);
@@ -162,19 +160,4 @@ fn serializes_state_with_serde_feature() {
     let round_trip: TableState = serde_json::from_str(&json).unwrap();
 
     assert_eq!(round_trip, state);
-}
-
-#[cfg(feature = "serde")]
-#[test]
-fn serializes_every_selection_arm() {
-    for selection in [
-        TableSelection::Row(1),
-        TableSelection::Column(2),
-        TableSelection::Cell { row: 3, column: 4 },
-    ] {
-        let state = TableState::new().with_selection(selection);
-        let json = serde_json::to_string(&state).unwrap();
-        let round_trip: TableState = serde_json::from_str(&json).unwrap();
-        assert_eq!(round_trip, state);
-    }
 }
